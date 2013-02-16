@@ -114,7 +114,7 @@ awk '{print $2,$4,$1,$3,$1*$3; OFS="."}' shopping.cart | sed '1d' | sed '1d'> .r
 cat .receipt
 
 pdflatex receipt < /dev/null > /dev/null
-open receipt.pdf
+#open receipt.pdf
 }
 
 echo "$(basename $0), the (bash) Cash Register v0.1";
