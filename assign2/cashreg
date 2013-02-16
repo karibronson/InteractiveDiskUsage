@@ -6,7 +6,7 @@ let amount=0;
 let payment=0;
 let total=0;
 
-#New process remove shopping cart
+New process remove shopping cart
 if [ $(ls | grep -c 'shopping.cart') -ne 0 ]; then
     rm shopping.cart;
 fi
@@ -98,9 +98,23 @@ function finalize(){
 # changes it into a pdf
 #
 function pdf(){
-awk '{print $2, $4,$1,$3}' OFS="," shopping.cart | sed '1d' | sed '1d' > .recipt
+#deletes any items that have 0 quantities
+touch temp
+sed '/^0/d' shopping.cart > temp; mv temp shopping.cart 
 
-#pdflatex receipt < /dev/null > /dev/null
+#increase or decrease multiple numbers
+cat shopping.cart | sort -n -k2 > temp; mv temp shopping.cart
+
+#Delete negative numbers
+sed '/^-/d' shopping.cart > temp; mv temp shopping.cart
+
+#reformats, commas, and total
+awk '{print $2,$4,$1,$3,$1*$3; OFS="."}' shopping.cart | sed '1d' | sed '1d'> .receipt
+
+cat .receipt
+
+pdflatex receipt < /dev/null > /dev/null
+open receipt.pdf
 }
 
 echo "$(basename $0), the (bash) Cash Register v0.1";
