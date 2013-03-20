@@ -1,0 +1,159 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+use Getopt::Std;
+use Data::Dumper;
+
+#Sorting and printing a hash
+sub sortHash($@){
+    my $amount = shift @_;
+    my %sortedHash =@_;
+    my $count = 1;
+    foreach (sort { ($sortedHash{$b} <=> $sortedHash{$a}) } keys %sortedHash) 
+    {
+	if($count <= $amount){
+	    printf "%-4s %-50s %-12s\n", $count, $_, $sortedHash{$_};
+#	    print "$count) $_\t\t\t $sortedHash{$_}\n";
+	}
+    $count = $count+1;
+    }
+}
+
+
+
+#Opens Directory, Saves file and size to hash
+sub openDir($){
+    my ($directory) = $_[0];
+    opendir my $dh, $directory or die "Forgot to add a Directory: $!";
+    my %fileAndSize;
+    while(my $file = readdir($dh)){
+#	print "$file ", -s "$directory/$file","\n";
+	$fileAndSize{"$file"} = -s "$directory/$file";
+    }
+    closedir $dh;
+    sortHash(20,%fileAndSize);
+}
+
+
+sub recursiveOpenDir{
+    my %thehash;
+    my $sum = 0;
+    my ($directory)=$_[0];
+    opendir my $dh, $directory or die "Issues with opening Directory: $!";
+
+    foreach my $file (readdir($dh)){
+	
+	if(-d "$directory/$file"){
+	    if("$file" ne '.' && "$file" ne '..'){
+		$thehash{$file} = recursiveOpenDir("$directory/$file");
+	    }
+       	}else{
+	    if(-f "$directory/$file"){
+	       $thehash{$file} = -s "$directory/$file";	 
+		$sum = $sum + (-s "$directory/$file");
+	    }
+	}
+    }
+    $thehash{'.'} = $sum;
+    return \%thehash;
+}
+
+
+sub EditOpenDirArrayRef{
+    my %hash;
+    my ($directory)= $_[0];
+
+    opendir my $dh, $directory or die "Forgot to add a Directory: $!";
+    
+    foreach my $file (readdir($dh)) {
+
+        if(-d "$directory/$file"){
+
+#            print "$directory/$file is a Directory\t\n";
+	    
+
+            if("$file" ne '.' && "$file" ne '..'){
+
+		EditOpenDirArrayRef("$directory/$file");
+
+#               print " recurse\n";                                               
+            }
+	}else{
+            if (-f "$directory/$file"){
+
+#		print "$directory/$file is a file\n";
+
+		$hash{"$directory/$file"} = -s "$directory/$file";
+	    }
+        }
+#       print -s "$directory/$file","\n";                                         
+#	sortHash(20,%hash);
+    }
+    closedir $dh;
+    print Dumper(%hash);
+}
+
+
+sub openDirArrayRef{
+
+    my ($directory)= $_[0];
+    opendir my $dh, $directory or die "Unable: $!";
+    my %fileorDir;
+    while(my $file = readdir($dh)){
+	if(-d "$directory/$file"){
+	    print "$directory/$file is a Directory\t\n";
+	    if("$file" ne '.' && "$file" ne '..'){
+		openDirArrayRef("$directory/$file");
+#		print " recurse\n";
+	    }
+	 }else{
+	    if (-f "$directory/$file"){
+	    print "$directory/$file is a file\n";
+	    }
+	}
+#	print -s "$directory/$file","\n";
+    }
+    closedir $dh;
+}
+
+
+#%opts holds the options
+#this will have to change bc opts scope is to small
+sub options(){
+    my %opts;
+    getopts ("gmkhvN:", \%opts);
+    print %opts, "\n";
+    print "@ARGV\n";  
+}
+
+#Called without a directory name
+#usage message then exit
+sub helpOptions(){
+    if($#ARGV < 0){
+    print "
+Usage: dui [options] directory
+Options:
+-N num\t Display only the top 'num' entries for each directory.
+-g\t Display sizes in 1073741824-byte (1-Gbyte) blocks.
+-m\t Display sizes in 1048576-byte (1-Mbyte) blocks.
+-\t Display sizes in 1024-byte (1-Kbyte) blocks.
+-h\t Display sizes as \"human-readable\" numbers, where
+\t all sizes include a suffix to indicate units of
+\t bytes or {kilo,mega,giga}bytes.
+
+-v\t Enable verbose/debugging output.
+";
+    exit(0);
+    }
+}
+
+#options;
+#helpOptions;
+#openDir($ARGV[0]);
+#EditOpenDirArrayRef($ARGV[0]);
+my $hash = recursiveOpenDir($ARGV[0]);
+print Dumper (%{$hash});
+#sortHash(10,%sortedHash);
+
+exit(0);
