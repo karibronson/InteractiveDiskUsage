@@ -3,18 +3,25 @@
 use warnings;
 use strict;
 use Getopt::Std;
-use Data::Dumper;
+use Data::Dumper; 
+
 
 #Sorting and printing a hash
 sub sortHash($@){
     my $amount = shift @_;
-    my %sortedHash =@_;
+    my %hash = @_;
+    my %sortedHash = %hash;
     my $count = 1;
-    foreach (sort { ($sortedHash{$b} <=> $sortedHash{$a}) } keys %sortedHash) 
-    {
+
+    foreach my $val (keys %sortedHash){
+	if(ref $sortedHash{$val} eq "HASH"){
+	    $sortedHash{$val} = $sortedHash{$val}->{'.'};
+	}
+    }
+    
+    foreach (sort {($sortedHash{$b} <=> $sortedHash{$a})} keys %sortedHash){
 	if($count <= $amount){
 	    printf "%-4s %-50s %-12s\n", $count, $_, $sortedHash{$_};
-#	    print "$count) $_\t\t\t $sortedHash{$_}\n";
 	}
     $count = $count+1;
     }
@@ -32,7 +39,7 @@ sub openDir($){
 	$fileAndSize{"$file"} = -s "$directory/$file";
     }
     closedir $dh;
-    sortHash(20,%fileAndSize);
+    EditSortHash(20,%fileAndSize);
 }
 
 
@@ -153,7 +160,7 @@ Options:
 #openDir($ARGV[0]);
 #EditOpenDirArrayRef($ARGV[0]);
 my $hash = recursiveOpenDir($ARGV[0]);
-print Dumper (%{$hash});
-#sortHash(10,%sortedHash);
+#print Dumper (%{$hash});
+sortHash(10,%{$hash});
 
 exit(0);
