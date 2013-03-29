@@ -39,40 +39,25 @@ sub sortHash(@){
 #    print "@lookthrough\n";
 }
 
-#Creates Hash in Hashes of the directory given                                                  
+#Creates Hash in Hashes of the directory given                       
 sub recursiveOpenDir1{
     my %thehash;
     my $sum = 0;
     my ($directory)=$_[0];
     opendir my $dh, $directory or die "Issues with opening Directory: $!";
-
     foreach my $file (readdir($dh)){
-
-	if($totalFiles % 100 == 0){
-	    print "\r$totalFiles";
+	printTotalFiles();
+	if(-d "$directory/$file" && "$file" ne '.' && "$file" ne '..'){
+	    $thehash{$file} = recursiveOpenDir1("$directory/$file");
+	    $sum = $sum + $thehash{$file}->{'.'};
+	}elsif(-f "$directory/$file" || -l "$directory/$file"){
+	    $thehash{$file} = -s "$directory/$file";
+	    $sum = FileDo($sum, "$directory/$file");
 	}
-        if(-d "$directory/$file"){
-            if("$file" ne '.' && "$file" ne '..'){
-                $thehash{$file} = recursiveOpenDir1("$directory/$file");
-		$sum = $sum + $thehash{$file}->{'.'};
-            }
-        }else{
-            if(-f "$directory/$file" || -l "$directory/$file"){
-		$thehash{$file} = -s "$directory/$file";
-                if( defined -s "$directory/$file"){
-		    $sum = $sum + (-s "$directory/$file");
-		    $totalFiles= $totalFiles +1;
-		    if(defined $opts{v}){
-			print "$directory/$file\n";
-		    }		    
-		}
-	    }
-        }
     }
     $thehash{'.'} = $sum;
     return \%thehash;
 }
-
 
 # to make global variables for the -v -N
 #and then use the opts hash everytime so you can use one fucntion
@@ -82,8 +67,8 @@ sub recursiveOpenDir1{
 #this will have to change bc opts scope is to small
 sub options(){
     getopts ("gmkhvN:", \%opts);
-    print %opts, "\n";
-    print "@ARGV\n";  
+#    print %opts, "\n";
+#   print "@ARGV\n";  
     
 #    sortHash(($opts{N}),%{recursiveOpenDir1($ARGV[0])}) if defined $opts{N};
     
@@ -92,7 +77,7 @@ sub options(){
 #Called without a directory name
 #usage message then exit
 sub helpOptions(){
-    if($#ARGV < 0){
+    if($#ARGV < 0 || defined $opts{h}){
     print "
 Usage: dui [options] directory
 Options:
@@ -106,7 +91,9 @@ Options:
 
 -v\t Enable verbose/debugging output.
 ";
-    exit(0);
+    if ($#ARGV < 0){
+	exit(0);
+    }
     }
 }
 
@@ -136,12 +123,14 @@ sub replaceWithSize(@){
 #http://perldoc.perl.org/functions/int.html
 sub returnSize($){
     my $sizeInBytes = shift @_;
-    if (defined $opts{k}){
-	$sizeInBytes= $sizeInBytes/KILO;
-    } elsif (defined $opts{m}){
-	$sizeInBytes= $sizeInBytes/MEGA;
-    } elsif (defined $opts{g}){
-	$sizeInBytes= $sizeInBytes/GIGA;
+    if ($sizeInBytes > 0){
+	if (defined $opts{k}){
+	    $sizeInBytes= $sizeInBytes/KILO;
+	} elsif (defined $opts{m}){
+	    $sizeInBytes= $sizeInBytes/MEGA;
+	} elsif (defined $opts{g}){
+	    $sizeInBytes= $sizeInBytes/GIGA;
+	}
     }
 #   Return the rounded down version of the number
 #   If rounded up is required add 0.5
@@ -156,14 +145,46 @@ sub histogram($@){
     return "#"x"$histogram";
 }
 
-sub main(){
-
-#    while(1){
-    helpOptions;
-    options;
-    sortHash(%{recursiveOpenDir1($ARGV[0])});
-#    }
+sub printTotalFiles{
+    if($totalFiles % 100 == 0){
+	print "\r$totalFiles";
+    }
 }
+
+sub FileDo($$){
+    my ($sum, $file) = @_;
+    if(defined -s $file){
+	$sum = $sum + (-s $file);
+	$totalFiles= $totalFiles +1;
+    }
+    if(defined $opts{v}){
+	print "$file\n";
+    }		    
+    return $sum;
+}
+
+sub explore{
+    print "Explore (h for Help)? ";
+}
+
+#toggle with options defined
+sub stdinOptions($){
+    print "$_";
+}
+
+sub main(){
+    do{
+	helpOptions;
+	if(defined $_){
+	    stdinOptions($_);
+	}else{
+	    options;
+	}
+	sortHash(%{recursiveOpenDir1($ARGV[0])});
+	explore();
+    }while(<STDIN>)
+}
+
 
 main;
 #options;
