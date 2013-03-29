@@ -4,134 +4,89 @@ use warnings;
 use strict;
 use Getopt::Std;
 use Data::Dumper; 
+#use POSIX;
 
+#flushes the buffer after ever print
+$|=1;
+my $totalFiles= 0;
+my %opts;
+use constant KILO => 1024;
+use constant MEGA => 1048576;
+use constant GIGA => 1073741824;
 
 #Sorting and printing a hash
-sub sortHash($@){
-    my $amount = shift @_;
+sub sortHash(@){
     my %hash = @_;
     my %sortedHash = %hash;
     my $count = 1;
+    my @lookthrough = ();
+#   solved the -N issue
+    my $amount = thePrintAmount(%sortedHash);
+#   replace the hash reference with the size in the hash values
+    %sortedHash = replaceWithSize(%sortedHash);
+ 
+     print " Done\n";
 
-    foreach my $val (keys %sortedHash){
-	if(ref $sortedHash{$val} eq "HASH"){
-	    $sortedHash{$val} = $sortedHash{$val}->{'.'};
-	}
-    }
-    
+#   Sort
     foreach (sort {($sortedHash{$b} <=> $sortedHash{$a})} keys %sortedHash){
-	if($count <= $amount){
-	    printf "%-4s %-50s %-12s\n", $count, $_, $sortedHash{$_};
+	if($count <= $amount){   
+	    printf "%-4s %-30s %-12s %-20s\n", "$count)", substr($_,0,29), returnSize($sortedHash{$_}), histogram($_,%sortedHash);
+	    push (@lookthrough, $hash{$_});
 	}
     $count = $count+1;
     }
+#    print "$sortedHash{'.'}\n";
+#    print "@lookthrough\n";
 }
 
-
-
-#Opens Directory, Saves file and size to hash
-sub openDir($){
-    my ($directory) = $_[0];
-    opendir my $dh, $directory or die "Forgot to add a Directory: $!";
-    my %fileAndSize;
-    while(my $file = readdir($dh)){
-#	print "$file ", -s "$directory/$file","\n";
-	$fileAndSize{"$file"} = -s "$directory/$file";
-    }
-    closedir $dh;
-    EditSortHash(20,%fileAndSize);
-}
-
-
-sub recursiveOpenDir{
+#Creates Hash in Hashes of the directory given                                                  
+sub recursiveOpenDir1{
     my %thehash;
     my $sum = 0;
     my ($directory)=$_[0];
     opendir my $dh, $directory or die "Issues with opening Directory: $!";
 
     foreach my $file (readdir($dh)){
-	
-	if(-d "$directory/$file"){
-	    if("$file" ne '.' && "$file" ne '..'){
-		$thehash{$file} = recursiveOpenDir("$directory/$file");
-	    }
-       	}else{
-	    if(-f "$directory/$file"){
-	       $thehash{$file} = -s "$directory/$file";	 
-		$sum = $sum + (-s "$directory/$file");
-	    }
+
+	if($totalFiles % 100 == 0){
+	    print "\r$totalFiles";
 	}
+        if(-d "$directory/$file"){
+            if("$file" ne '.' && "$file" ne '..'){
+                $thehash{$file} = recursiveOpenDir1("$directory/$file");
+		$sum = $sum + $thehash{$file}->{'.'};
+            }
+        }else{
+            if(-f "$directory/$file" || -l "$directory/$file"){
+		$thehash{$file} = -s "$directory/$file";
+                if( defined -s "$directory/$file"){
+		    $sum = $sum + (-s "$directory/$file");
+		    $totalFiles= $totalFiles +1;
+		    if(defined $opts{v}){
+			print "$directory/$file\n";
+		    }		    
+		}
+	    }
+        }
     }
     $thehash{'.'} = $sum;
     return \%thehash;
 }
 
 
-sub EditOpenDirArrayRef{
-    my %hash;
-    my ($directory)= $_[0];
-
-    opendir my $dh, $directory or die "Forgot to add a Directory: $!";
-    
-    foreach my $file (readdir($dh)) {
-
-        if(-d "$directory/$file"){
-
-#            print "$directory/$file is a Directory\t\n";
-	    
-
-            if("$file" ne '.' && "$file" ne '..'){
-
-		EditOpenDirArrayRef("$directory/$file");
-
-#               print " recurse\n";                                               
-            }
-	}else{
-            if (-f "$directory/$file"){
-
-#		print "$directory/$file is a file\n";
-
-		$hash{"$directory/$file"} = -s "$directory/$file";
-	    }
-        }
-#       print -s "$directory/$file","\n";                                         
-#	sortHash(20,%hash);
-    }
-    closedir $dh;
-    print Dumper(%hash);
-}
-
-
-sub openDirArrayRef{
-
-    my ($directory)= $_[0];
-    opendir my $dh, $directory or die "Unable: $!";
-    my %fileorDir;
-    while(my $file = readdir($dh)){
-	if(-d "$directory/$file"){
-	    print "$directory/$file is a Directory\t\n";
-	    if("$file" ne '.' && "$file" ne '..'){
-		openDirArrayRef("$directory/$file");
-#		print " recurse\n";
-	    }
-	 }else{
-	    if (-f "$directory/$file"){
-	    print "$directory/$file is a file\n";
-	    }
-	}
-#	print -s "$directory/$file","\n";
-    }
-    closedir $dh;
-}
-
+# to make global variables for the -v -N
+#and then use the opts hash everytime so you can use one fucntion
+#
 
 #%opts holds the options
 #this will have to change bc opts scope is to small
 sub options(){
-    my %opts;
     getopts ("gmkhvN:", \%opts);
     print %opts, "\n";
     print "@ARGV\n";  
+    
+#    sortHash(($opts{N}),%{recursiveOpenDir1($ARGV[0])}) if defined $opts{N};
+    
 }
 
 #Called without a directory name
@@ -144,7 +99,7 @@ Options:
 -N num\t Display only the top 'num' entries for each directory.
 -g\t Display sizes in 1073741824-byte (1-Gbyte) blocks.
 -m\t Display sizes in 1048576-byte (1-Mbyte) blocks.
--\t Display sizes in 1024-byte (1-Kbyte) blocks.
+-k\t Display sizes in 1024-byte (1-Kbyte) blocks.
 -h\t Display sizes as \"human-readable\" numbers, where
 \t all sizes include a suffix to indicate units of
 \t bytes or {kilo,mega,giga}bytes.
@@ -155,12 +110,68 @@ Options:
     }
 }
 
+sub thePrintAmount(@){
+    my %subHash = @_;
+    my $amount=0;
+    if (defined $opts{N}){
+	$amount = $opts{N};
+    } else {
+	$amount= keys %subHash;
+    }
+    return $amount;
+}
+
+# Fill the new hash with the appropriate size (not hash references)
+sub replaceWithSize(@){
+   my %replaceHash = @_;
+   foreach my $val (keys %replaceHash){
+	if(ref $replaceHash{$val} eq "HASH"){
+	    $replaceHash{$val} = $replaceHash{$val}->{'.'};
+	}
+    }
+   return %replaceHash;
+}
+
+#Returns size user requested
+#http://perldoc.perl.org/functions/int.html
+sub returnSize($){
+    my $sizeInBytes = shift @_;
+    if (defined $opts{k}){
+	$sizeInBytes= $sizeInBytes/KILO;
+    } elsif (defined $opts{m}){
+	$sizeInBytes= $sizeInBytes/MEGA;
+    } elsif (defined $opts{g}){
+	$sizeInBytes= $sizeInBytes/GIGA;
+    }
+#   Return the rounded down version of the number
+#   If rounded up is required add 0.5
+    return int($sizeInBytes);
+}
+
+#returns the number of # that the file contributes
+sub histogram($@){
+    my ($val, %histoHash) = @_;
+#   get percent of file has then * 20 spots to fill and + 0.5 to round up
+    my $histogram = (($histoHash{$val}/$histoHash{'.'})*20)+0.5;
+    return "#"x"$histogram";
+}
+
+sub main(){
+
+#    while(1){
+    helpOptions;
+    options;
+    sortHash(%{recursiveOpenDir1($ARGV[0])});
+#    }
+}
+
+main;
 #options;
 #helpOptions;
 #openDir($ARGV[0]);
 #EditOpenDirArrayRef($ARGV[0]);
-my $hash = recursiveOpenDir($ARGV[0]);
+#my $hash = recursiveOpenDir1($ARGV[0]);
 #print Dumper (%{$hash});
-sortHash(10,%{$hash});
+#sortHash(10,%{$hash});
 
 exit(0);
