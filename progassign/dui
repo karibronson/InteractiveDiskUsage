@@ -10,6 +10,7 @@ use Data::Dumper;
 $|=1;
 my $totalFiles= 0;
 my %opts;
+my @lookThrough = ();
 use constant KILO => 1024;
 use constant MEGA => 1048576;
 use constant GIGA => 1073741824;
@@ -18,25 +19,47 @@ use constant GIGA => 1073741824;
 sub sortHash(@){
     my %hash = @_;
     my %sortedHash = %hash;
-    my $count = 1;
-    my @lookthrough = ();
+    my $count = 0;
+
 #   solved the -N issue
     my $amount = thePrintAmount(%sortedHash);
-#   replace the hash reference with the size in the hash values
+#   replace the reference with the size
     %sortedHash = replaceWithSize(%sortedHash);
  
-     print " Done\n";
-
 #   Sort
     foreach (sort {($sortedHash{$b} <=> $sortedHash{$a})} keys %sortedHash){
 	if($count <= $amount){   
+	    next if($_ eq '.');
 	    printf "%-4s %-30s %-12s %-20s\n", "$count)", substr($_,0,29), returnSize($sortedHash{$_}), histogram($_,%sortedHash);
-	    push (@lookthrough, $hash{$_});
+	    push (@lookThrough, $hash{$_});
 	}
-    $count = $count+1;
+    } continue {
+	$count = $count+1;
     }
-#    print "$sortedHash{'.'}\n";
-#    print "@lookthrough\n";
+print "@lookThrough\n";
+}
+
+#okayyyyyyy so files need to display stat info, so we need to put strings into an array 
+#using grep, taken from stat, to make this shit good
+sub statinfo($){
+    my $arr= shift @_;
+    if(ref $arr eq "ARRAY"){
+	print "
+Device:\t $arr->[0]
+inode:\t $arr->[1]
+mode:\t $arr->[2]
+nlink:\t $arr->[3]
+uid:\t $arr->[4]
+gid:\t $arr->[5]
+rdev:\t $arr->[6]
+size:\t $arr->[7]
+atime:\t $arr->[8]
+mtime:\t $arr->[9]
+ctime:\t $arr->[10]
+blksz:\t $arr->[11]
+blocks:\t $arr->[12]
+"
+    }
 }
 
 #Creates Hash in Hashes of the directory given                       
@@ -51,7 +74,8 @@ sub recursiveOpenDir1{
 	    $thehash{$file} = recursiveOpenDir1("$directory/$file");
 	    $sum = $sum + $thehash{$file}->{'.'};
 	}elsif(-f "$directory/$file" || -l "$directory/$file"){
-	    $thehash{$file} = -s "$directory/$file";
+	    my @arr = stat "$directory/$file";
+	    $thehash{$file} = \@arr;
 	    $sum = FileDo($sum, "$directory/$file");
 	}
     }
@@ -112,8 +136,11 @@ sub thePrintAmount(@){
 sub replaceWithSize(@){
    my %replaceHash = @_;
    foreach my $val (keys %replaceHash){
+#http://perldoc.perl.org/functions/ref.html
 	if(ref $replaceHash{$val} eq "HASH"){
 	    $replaceHash{$val} = $replaceHash{$val}->{'.'};
+	}elsif (ref $replaceHash{$val} eq "ARRAY"){
+	    $replaceHash{$val} = $replaceHash{$val}->[7];
 	}
     }
    return %replaceHash;
@@ -125,16 +152,30 @@ sub returnSize($){
     my $sizeInBytes = shift @_;
     if ($sizeInBytes > 0){
 	if (defined $opts{k}){
-	    $sizeInBytes= $sizeInBytes/KILO;
+	    $sizeInBytes= int($sizeInBytes/KILO);
 	} elsif (defined $opts{m}){
-	    $sizeInBytes= $sizeInBytes/MEGA;
+	    $sizeInBytes= int($sizeInBytes/MEGA);
 	} elsif (defined $opts{g}){
-	    $sizeInBytes= $sizeInBytes/GIGA;
+	    $sizeInBytes= int($sizeInBytes/GIGA);
 	}
     }
-#   Return the rounded down version of the number
-#   If rounded up is required add 0.5
-    return int($sizeInBytes);
+    return humanReadable($sizeInBytes);
+}
+
+sub humanReadable($){
+    my $size = shift @_;
+    if ($size > 0){
+	if (defined $opts{k} && defined $opts{h}){
+	    $size = "$size" . "K";
+	} elsif (defined $opts{m} && defined $opts{h}){
+	    $size = "$size" . "M";
+	} elsif (defined $opts{g} && defined $opts{h}){
+	    $size = "$size" . "G";
+	}elsif (defined $opts{h}){
+	    $size = "$size" . "B";
+	}
+    }
+    return $size;
 }
 
 #returns the number of # that the file contributes
@@ -170,6 +211,36 @@ sub explore{
 #toggle with options defined
 sub stdinOptions($){
     print "$_";
+    helpOptions if($_ =~ m/^h$/);
+    print "HOllA DIEGO\n" if(m/^\d/);
+
+#need to grab single chars for each match to put into array
+    my @matches = ($_ =~ m/-([gmkhN])+/g);
+	print "matches: " . "@matches\n";
+
+    foreach my $option (@matches){
+	toggle($option);
+    }
+
+#if(m/-N (\d)/);
+#if(m/-g/
+
+#   clear array with references
+    @lookThrough = ();
+}
+
+sub toggle($$){
+    my $char = shift @_;
+    my $listLength = shift @_;
+    if(defined $opts{$char}){
+	delete $opts{$char};
+    }else{
+	$opts{$char} = '1';
+    }
+    if ($char eq 'N'){
+	$opts{$char} = $listLength;
+    }
+    print Dumper %opts;
 }
 
 sub main(){
