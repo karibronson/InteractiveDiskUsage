@@ -10,33 +10,32 @@ use Data::Dumper;
 $|=1;
 my $totalFiles= 0;
 my %opts;
-my @lookThrough = ();
+my @currentDirRef = ();
+my @PathDirRef = ();
+my $PARENTDIRREF;
 use constant KILO => 1024;
 use constant MEGA => 1048576;
 use constant GIGA => 1073741824;
 
 #Sorting and printing a hash
-sub sortHash(@){
+sub PrintDir(@){
     my %hash = @_;
     my %sortedHash = %hash;
-    my $count = 0;
-
+    my $count = 1;
 #   solved the -N issue
-    my $amount = thePrintAmount(%sortedHash);
+    my $amount = TopNumEntries(%sortedHash);
 #   replace the reference with the size
     %sortedHash = replaceWithSize(%sortedHash);
- 
-#   Sort
+#   print according to file/dir size
     foreach (sort {($sortedHash{$b} <=> $sortedHash{$a})} keys %sortedHash){
 	if($count <= $amount){   
 	    next if($_ eq '.');
-	    printf "%-4s %-30s %-12s %-20s\n", "$count)", substr($_,0,29), returnSize($sortedHash{$_}), histogram($_,%sortedHash);
-	    push (@lookThrough, $hash{$_});
-	}
-    } continue {
+	    printf "%-4s %-30s %-12s %-20s\n", "$count)", substr($_,0,29), 
+	    RequestedFileSize($sortedHash{$_}), histogram($_,%sortedHash);
+	    push (@currentDirRef, $hash{$_});
+	} 
 	$count = $count+1;
     }
-print "@lookThrough\n";
 }
 
 #okayyyyyyy so files need to display stat info, so we need to put strings into an array 
@@ -58,12 +57,14 @@ mtime:\t $arr->[9]
 ctime:\t $arr->[10]
 blksz:\t $arr->[11]
 blocks:\t $arr->[12]
+
+(r for Return)
 "
     }
 }
 
 #Creates Hash in Hashes of the directory given                       
-sub recursiveOpenDir1{
+sub OpenDir{
     my %thehash;
     my $sum = 0;
     my ($directory)=$_[0];
@@ -71,57 +72,54 @@ sub recursiveOpenDir1{
     foreach my $file (readdir($dh)){
 	printTotalFiles();
 	if(-d "$directory/$file" && "$file" ne '.' && "$file" ne '..'){
-	    $thehash{$file} = recursiveOpenDir1("$directory/$file");
+	    $thehash{$file} = OpenDir("$directory/$file");
 	    $sum = $sum + $thehash{$file}->{'.'};
 	}elsif(-f "$directory/$file" || -l "$directory/$file"){
 	    my @arr = stat "$directory/$file";
 	    $thehash{$file} = \@arr;
-	    $sum = FileDo($sum, "$directory/$file");
+	    $sum = DirSum($sum, "$directory/$file");
+	    Verbose($file);
 	}
     }
     $thehash{'.'} = $sum;
     return \%thehash;
 }
 
-# to make global variables for the -v -N
-#and then use the opts hash everytime so you can use one fucntion
-#
-
 #%opts holds the options
-#this will have to change bc opts scope is to small
 sub options(){
     getopts ("gmkhvN:", \%opts);
-#    print %opts, "\n";
-#   print "@ARGV\n";  
-    
-#    sortHash(($opts{N}),%{recursiveOpenDir1($ARGV[0])}) if defined $opts{N};
-    
 }
 
 #Called without a directory name
 #usage message then exit
-sub helpOptions(){
-    if($#ARGV < 0 || defined $opts{h}){
+sub Help(){
+    if($#ARGV < 0 || defined $opts{H}){
     print "
 Usage: dui [options] directory
 Options:
 -N num\t Display only the top 'num' entries for each directory.
+-B\t Display previous directory
+-r\t Return to current directory (file viewing)
 -g\t Display sizes in 1073741824-byte (1-Gbyte) blocks.
 -m\t Display sizes in 1048576-byte (1-Mbyte) blocks.
 -k\t Display sizes in 1024-byte (1-Kbyte) blocks.
 -h\t Display sizes as \"human-readable\" numbers, where
 \t all sizes include a suffix to indicate units of
 \t bytes or {kilo,mega,giga}bytes.
+-q\t Quit
 
 -v\t Enable verbose/debugging output.
 ";
     if ($#ARGV < 0){
 	exit(0);
+    }else{
+#	Delete so H wont have toggle effect
+	delete $opts{H};
     }
     }
 }
 
-sub thePrintAmount(@){
+sub TopNumEntries(@){
     my %subHash = @_;
     my $amount=0;
     if (defined $opts{N}){
@@ -132,11 +130,11 @@ sub thePrintAmount(@){
     return $amount;
 }
 
-# Fill the new hash with the appropriate size (not hash references)
+#Fill the new hash with the appropriate size (not hash references)
 sub replaceWithSize(@){
    my %replaceHash = @_;
    foreach my $val (keys %replaceHash){
-#http://perldoc.perl.org/functions/ref.html
+#       http://perldoc.perl.org/functions/ref.html
 	if(ref $replaceHash{$val} eq "HASH"){
 	    $replaceHash{$val} = $replaceHash{$val}->{'.'};
 	}elsif (ref $replaceHash{$val} eq "ARRAY"){
@@ -146,9 +144,10 @@ sub replaceWithSize(@){
    return %replaceHash;
 }
 
+
 #Returns size user requested
 #http://perldoc.perl.org/functions/int.html
-sub returnSize($){
+sub RequestedFileSize($){
     my $sizeInBytes = shift @_;
     if ($sizeInBytes > 0){
 	if (defined $opts{k}){
@@ -178,6 +177,12 @@ sub humanReadable($){
     return $size;
 }
 
+sub Verbose($){
+    if(defined $opts{v}){
+	print "@_\n";
+    }		    
+}
+
 #returns the number of # that the file contributes
 sub histogram($@){
     my ($val, %histoHash) = @_;
@@ -192,78 +197,82 @@ sub printTotalFiles{
     }
 }
 
-sub FileDo($$){
+sub DirSum($$){
     my ($sum, $file) = @_;
     if(defined -s $file){
 	$sum = $sum + (-s $file);
 	$totalFiles= $totalFiles +1;
     }
-    if(defined $opts{v}){
-	print "$file\n";
-    }		    
     return $sum;
 }
 
-sub explore{
-    print "Explore (h for Help)? ";
+
+sub Explore{
+    print "Explore (H for Help)? ";
+}
+
+sub ExploreDirFile($){
+    if(m/^(\d+)/){
+	if(ref $currentDirRef[$1-1] eq "HASH"){
+#	    Directory reference saved to dirRef
+#	    $opts{'dirRef'} = $currentDirRef[$1-1];  
+	    push(@PathDirRef, $currentDirRef[$1-1]);  
+	}elsif (ref $currentDirRef[$1-1] eq "ARRAY"){
+#	    File reference saved to fileRef
+#	    $opts{'fileRef'} = $currentDirRef[$1-1];
+	    push(@PathDirRef, $currentDirRef[$1-1]);  
+	}
+    }
+    @currentDirRef = ();
 }
 
 #toggle with options defined
-sub stdinOptions($){
-    print "$_";
-    helpOptions if($_ =~ m/^h$/);
-    print "HOllA DIEGO\n" if(m/^\d/);
-
-#need to grab single chars for each match to put into array
-    my @matches = ($_ =~ m/-([gmkhN])+/g);
-	print "matches: " . "@matches\n";
-
-    foreach my $option (@matches){
-	toggle($option);
+sub StdinOptions($){
+#   Explore file/dir
+    ExploreDirFile($_);
+#   List lenght change
+#   $opts{'Explore'}='$1' if(m/^(\d+)/);
+    $opts{'B'}='1' if(m/B/);
+    $opts{'N'}=$1 if(m/N (\d+)/);
+    $opts{'H'}='1' if(m/H/);
+    $opts{'r'}='1' if(m/r/);
+    $opts{'q'}='1' if(m/q/);
+#   gmkh - toggle
+    foreach my $var (my @myarray = (m/-?([gmkh])/g)){
+	ToggleOptions($var);
     }
-
-#if(m/-N (\d)/);
-#if(m/-g/
-
-#   clear array with references
-    @lookThrough = ();
+#   print Dumper %opts;
 }
 
-sub toggle($$){
+#gmkh
+sub ToggleOptions($){
     my $char = shift @_;
-    my $listLength = shift @_;
     if(defined $opts{$char}){
 	delete $opts{$char};
     }else{
 	$opts{$char} = '1';
     }
-    if ($char eq 'N'){
-	$opts{$char} = $listLength;
-    }
     print Dumper %opts;
 }
 
-sub main(){
+
+sub Main(){
     do{
-	helpOptions;
+	Help;
+	options;
 	if(defined $_){
-	    stdinOptions($_);
-	}else{
-	    options;
+	    StdinOptions($_);
 	}
-	sortHash(%{recursiveOpenDir1($ARGV[0])});
-	explore();
+	if($#PathDirRef == -1){
+	    $PARENTDIRREF = OpenDir($ARGV[0]);
+	    push (@PathDirRef, $PARENTDIRREF);
+	}	    
+	PrintDir(%{$PathDirRef[$#PathDirRef]});
+	Explore();
     }while(<STDIN>)
 }
 
 
-main;
-#options;
-#helpOptions;
-#openDir($ARGV[0]);
-#EditOpenDirArrayRef($ARGV[0]);
-#my $hash = recursiveOpenDir1($ARGV[0]);
-#print Dumper (%{$hash});
-#sortHash(10,%{$hash});
+Main;
 
 exit(0);
