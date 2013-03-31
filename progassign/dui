@@ -40,11 +40,10 @@ sub PrintDir(@){
 
 #okayyyyyyy so files need to display stat info, so we need to put strings into an array 
 #using grep, taken from stat, to make this shit good
-sub statinfo($){
+sub StatInfo($){
     my $arr= shift @_;
     if(ref $arr eq "ARRAY"){
-	print "
-Device:\t $arr->[0]
+	print "Device:\t $arr->[0]
 inode:\t $arr->[1]
 mode:\t $arr->[2]
 nlink:\t $arr->[3]
@@ -57,8 +56,6 @@ mtime:\t $arr->[9]
 ctime:\t $arr->[10]
 blksz:\t $arr->[11]
 blocks:\t $arr->[12]
-
-(r for Return)
 "
     }
 }
@@ -98,7 +95,7 @@ sub Help(){
 Usage: dui [options] directory
 Options:
 -N num\t Display only the top 'num' entries for each directory.
--B\t Display previous directory
+-b\t Display previous directory
 -r\t Return to current directory (file viewing)
 -g\t Display sizes in 1073741824-byte (1-Gbyte) blocks.
 -m\t Display sizes in 1048576-byte (1-Mbyte) blocks.
@@ -114,7 +111,7 @@ Options:
 	exit(0);
     }else{
 #	Delete so H wont have toggle effect
-	delete $opts{H};
+	delete $opts{'H'};
     }
     }
 }
@@ -192,7 +189,8 @@ sub histogram($@){
 }
 
 sub printTotalFiles{
-    if($totalFiles % 100 == 0){
+    print "Scanning\n" if($totalFiles == 0);
+    if($totalFiles % 100 == 0 && $totalFiles != 0){
 	print "\r$totalFiles";
     }
 }
@@ -208,31 +206,29 @@ sub DirSum($$){
 
 
 sub Explore{
-    print "Explore (H for Help)? ";
+    if (ref $PathDirRef[$#PathDirRef] eq "HASH"){
+	 print "Explore (H for Help)? ";
+	}elsif (ref $PathDirRef[$#PathDirRef] eq "ARRAY"){
+	    print "Return (r for return): ";
+	}
 }
 
-sub ExploreDirFile($){
-    if(m/^(\d+)/){
-	if(ref $currentDirRef[$1-1] eq "HASH"){
-#	    Directory reference saved to dirRef
-#	    $opts{'dirRef'} = $currentDirRef[$1-1];  
-	    push(@PathDirRef, $currentDirRef[$1-1]);  
-	}elsif (ref $currentDirRef[$1-1] eq "ARRAY"){
-#	    File reference saved to fileRef
-#	    $opts{'fileRef'} = $currentDirRef[$1-1];
-	    push(@PathDirRef, $currentDirRef[$1-1]);  
+sub ExploreDirFile(){
+    if(defined $opts{'Explore'}){
+	my $requestIndex = ($opts{'Explore'})-1;
+	if(ref $currentDirRef[$requestIndex] eq "HASH" ||
+	    ref $currentDirRef[$requestIndex] eq "ARRAY"){
+	    push(@PathDirRef, $currentDirRef[$requestIndex]);  
 	}
     }
+    delete $opts{'Explore'};
     @currentDirRef = ();
 }
 
 #toggle with options defined
 sub StdinOptions($){
-#   Explore file/dir
-    ExploreDirFile($_);
-#   List lenght change
-#   $opts{'Explore'}='$1' if(m/^(\d+)/);
-    $opts{'B'}='1' if(m/B/);
+    $opts{'Explore'}=$1 if(m/^(\d+)/);
+    $opts{'b'}='1' if(m/b/);
     $opts{'N'}=$1 if(m/N (\d+)/);
     $opts{'H'}='1' if(m/H/);
     $opts{'r'}='1' if(m/r/);
@@ -242,7 +238,34 @@ sub StdinOptions($){
 	ToggleOptions($var);
     }
 #   print Dumper %opts;
+    SpecialOptions();
 }
+
+#will call functions that deal
+#with Bq and directory requests
+sub SpecialOptions(){
+#   Directory request
+    ExploreDirFile();
+#   Back a Directory
+    StepBackDir();
+#   Quit
+    Quit();
+}
+
+sub Quit(){
+    if(defined $opts{'q'}){
+	exit(0);
+    }
+}
+
+sub StepBackDir(){
+    if(defined $opts{'b'} || defined $opts{'r'}){
+	pop @PathDirRef;
+    }
+    delete $opts{'b'};
+    delete $opts{'r'}
+}
+
 
 #gmkh
 sub ToggleOptions($){
@@ -252,22 +275,26 @@ sub ToggleOptions($){
     }else{
 	$opts{$char} = '1';
     }
-    print Dumper %opts;
+#    print Dumper %opts;
 }
 
 
 sub Main(){
     do{
-	Help;
 	options;
 	if(defined $_){
 	    StdinOptions($_);
 	}
+	Help;
 	if($#PathDirRef == -1){
 	    $PARENTDIRREF = OpenDir($ARGV[0]);
 	    push (@PathDirRef, $PARENTDIRREF);
 	}	    
-	PrintDir(%{$PathDirRef[$#PathDirRef]});
+	if (ref $PathDirRef[$#PathDirRef] eq "HASH"){
+	    PrintDir(%{$PathDirRef[$#PathDirRef]});
+	}elsif (ref $PathDirRef[$#PathDirRef] eq "ARRAY"){
+	    StatInfo($PathDirRef[$#PathDirRef]);
+	}
 	Explore();
     }while(<STDIN>)
 }
