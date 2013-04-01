@@ -4,43 +4,45 @@ use warnings;
 use strict;
 use Getopt::Std;
 use Data::Dumper; 
-#use POSIX;
 
-#flushes the buffer after ever print
 $|=1;
 my $totalFiles= 0;
 my %opts;
 my @currentDirRef = ();
 my @PathDirRef = ();
+my @PathDirName = ();
 my $PARENTDIRREF;
 use constant KILO => 1024;
 use constant MEGA => 1048576;
 use constant GIGA => 1073741824;
 
-#Sorting and printing a hash
-sub PrintDir(@){
-    my %hash = @_;
-    my %sortedHash = %hash;
+##############################printDir
+#Sorting the current directory by size
+# printing the results with histogram
+sub printDir(@){
+    my %originalHash = @_;
+    my %sortCurrentDir = @_;
     my $count = 1;
 #   solved the -N issue
-    my $amount = TopNumEntries(%sortedHash);
+    my $amount = topNumEntries(%sortCurrentDir);
 #   replace the reference with the size
-    %sortedHash = replaceWithSize(%sortedHash);
+    %sortCurrentDir = replaceWithSize(%sortCurrentDir);
 #   print according to file/dir size
-    foreach (sort {($sortedHash{$b} <=> $sortedHash{$a})} keys %sortedHash){
+    foreach (sort {($sortCurrentDir{$b} <=> $sortCurrentDir{$a})} keys %sortCurrentDir){
 	if($count <= $amount){   
 	    next if($_ eq '.');
 	    printf "%-4s %-30s %-12s %-20s\n", "$count)", substr($_,0,29), 
-	    RequestedFileSize($sortedHash{$_}), histogram($_,%sortedHash);
-	    push (@currentDirRef, $hash{$_});
+	    requestedFileSize($sortCurrentDir{$_}), histogram($_,%sortCurrentDir);
+	    push (@currentDirRef, $originalHash{$_});
 	} 
 	$count = $count+1;
     }
 }
 
-#okayyyyyyy so files need to display stat info, so we need to put strings into an array 
-#using grep, taken from stat, to make this shit good
-sub StatInfo($){
+##################################statInfo
+#prints the information stat would give by 
+#extracting the information from the array ref
+sub statInfo($){
     my $arr= shift @_;
     if(ref $arr eq "ARRAY"){
 	print "Device:\t $arr->[0]
@@ -60,35 +62,41 @@ blocks:\t $arr->[12]
     }
 }
 
-#Creates Hash in Hashes of the directory given                       
-sub OpenDir{
-    my %thehash;
+###############################################openDir
+#Only called once. Take command line argument of a Dir,
+#opens it and recursivly saves file and Directory infomration
+sub openDir{
+    my %directoryData;
     my $sum = 0;
     my ($directory)=$_[0];
     opendir my $dh, $directory or die "Issues with opening Directory: $!";
     foreach my $file (readdir($dh)){
+#	Feedback for the user
 	printTotalFiles();
 	if(-d "$directory/$file" && "$file" ne '.' && "$file" ne '..'){
-	    $thehash{$file} = OpenDir("$directory/$file");
-	    $sum = $sum + $thehash{$file}->{'.'};
+	    $directoryData{$file} = openDir("$directory/$file");
+#	    add child directory size to parent directory
+	    $sum = $sum + $directoryData{$file}->{'.'};
 	}elsif(-f "$directory/$file" || -l "$directory/$file"){
 	    my @arr = stat "$directory/$file";
-	    $thehash{$file} = \@arr;
-	    $sum = DirSum($sum, "$directory/$file");
-	    Verbose($file);
+	    $directoryData{$file} = \@arr;
+	    $sum = dirSum($sum, "$directory/$file");
+	    verbose($file);
 	}
     }
-    $thehash{'.'} = $sum;
-    return \%thehash;
+    $directoryData{'.'} = $sum;
+    return \%directoryData;
 }
 
-#%opts holds the options
+##############################options
+#%opts holds the command line options
 sub options(){
     getopts ("gmkhvN:", \%opts);
 }
 
-#Called without a directory name
-#usage message then exit
+####################################Help
+#usage message then exit if no directory
+#usage message without exit with 'H' option
 sub Help(){
     if($#ARGV < 0 || defined $opts{H}){
     print "
@@ -116,35 +124,41 @@ Options:
     }
 }
 
-sub TopNumEntries(@){
+########################topNumEntries
+#If N is defined, prints the entered
+#amount of directories/files in current dir
+sub topNumEntries(@){
     my %subHash = @_;
     my $amount=0;
-    if (defined $opts{N}){
+#   opts{N} = 0, will print out the entire directory
+    if (defined $opts{N} && $opts{N} > 0){
 	$amount = $opts{N};
     } else {
 	$amount= keys %subHash;
     }
     return $amount;
-}
+OA}
 
-#Fill the new hash with the appropriate size (not hash references)
+##############################replaceWithSize
+#Fills the new hash with the appropriate size
 sub replaceWithSize(@){
-   my %replaceHash = @_;
-   foreach my $val (keys %replaceHash){
+   my %currentDir = @_;
+   foreach my $val (keys %currentDir){
 #       http://perldoc.perl.org/functions/ref.html
-	if(ref $replaceHash{$val} eq "HASH"){
-	    $replaceHash{$val} = $replaceHash{$val}->{'.'};
-	}elsif (ref $replaceHash{$val} eq "ARRAY"){
-	    $replaceHash{$val} = $replaceHash{$val}->[7];
+	if(ref $currentDir{$val} eq "HASH"){
+	    $currentDir{$val} = $currentDir{$val}->{'.'};
+	}elsif (ref $currentDir{$val} eq "ARRAY"){
+	    $currentDir{$val} = $currentDir{$val}->[7];
 	}
     }
-   return %replaceHash;
+   return %currentDir;
 }
 
 
-#Returns size user requested
+###############################requestedFileSize
+#Returns the size option user requested -k -m -g
 #http://perldoc.perl.org/functions/int.html
-sub RequestedFileSize($){
+sub requestedFileSize($){
     my $sizeInBytes = shift @_;
     if ($sizeInBytes > 0){
 	if (defined $opts{k}){
@@ -158,6 +172,9 @@ sub RequestedFileSize($){
     return humanReadable($sizeInBytes);
 }
 
+##########################################humanReadable
+#returns the size with a letter appended that describes 
+#the units. -h (byte, kilo, mega, giga)
 sub humanReadable($){
     my $size = shift @_;
     if ($size > 0){
@@ -174,13 +191,18 @@ sub humanReadable($){
     return $size;
 }
 
-sub Verbose($){
+########################verbose
+#prints files as they are being
+#scanned from open dir -v
+sub verbose($){
     if(defined $opts{v}){
 	print "@_\n";
     }		    
 }
 
-#returns the number of # that the file contributes
+###########################################histogram
+#gets the percentage the file/dir contributes to the 
+#current dir returns a quantity of #
 sub histogram($@){
     my ($val, %histoHash) = @_;
 #   get percent of file has then * 20 spots to fill and + 0.5 to round up
@@ -188,6 +210,9 @@ sub histogram($@){
     return "#"x"$histogram";
 }
 
+###############################printTotalFiles
+#user feedback as to how the scanning is going
+#prints every 100 files
 sub printTotalFiles{
     print "Scanning\n" if($totalFiles == 0);
     if($totalFiles % 100 == 0 && $totalFiles != 0){
@@ -195,7 +220,10 @@ sub printTotalFiles{
     }
 }
 
-sub DirSum($$){
+#######################dirSum
+#Tracks the current directory 
+#size and the total file sum
+sub dirSum($$){
     my ($sum, $file) = @_;
     if(defined -s $file){
 	$sum = $sum + (-s $file);
@@ -204,8 +232,10 @@ sub DirSum($$){
     return $sum;
 }
 
-
-sub Explore{
+#######################################explore
+#prints after each Directory or file depending 
+#on the current reference being used
+sub explorePrint{
     if (ref $PathDirRef[$#PathDirRef] eq "HASH"){
 	 print "Explore (H for Help)? ";
 	}elsif (ref $PathDirRef[$#PathDirRef] eq "ARRAY"){
@@ -213,21 +243,27 @@ sub Explore{
 	}
 }
 
+#########################################exploreDirFile
+#When user enters a dir/file they would like to explore
+#this pushes the reference to that dir/file on the path array
 sub ExploreDirFile(){
-    if(defined $opts{'Explore'}){
+    if(defined $opts{'explore'}){
 	my $requestIndex = ($opts{'Explore'})-1;
 	if(ref $currentDirRef[$requestIndex] eq "HASH" ||
 	    ref $currentDirRef[$requestIndex] eq "ARRAY"){
+#	    pathDirRef is used to print the "new" current directory
 	    push(@PathDirRef, $currentDirRef[$requestIndex]);  
 	}
     }
-    delete $opts{'Explore'};
+#   clear explore to avoid looping
+    delete $opts{'explore'};
     @currentDirRef = ();
 }
 
-#toggle with options defined
+######################stdinOption
+#sets all options entered by user
 sub StdinOptions($){
-    $opts{'Explore'}=$1 if(m/^(\d+)/);
+    $opts{'explore'}=$1 if(m/^(\d+)/);
     $opts{'b'}='1' if(m/b/);
     $opts{'N'}=$1 if(m/N (\d+)/);
     $opts{'H'}='1' if(m/H/);
@@ -238,27 +274,33 @@ sub StdinOptions($){
 	ToggleOptions($var);
     }
 #   print Dumper %opts;
-    SpecialOptions();
+    specialOptions();
 }
 
-#will call functions that deal
-#with Bq and directory requests
-sub SpecialOptions(){
+################################specialOptions
+#will call functions that deal especially with 
+#certain optioons like -b -r -q and 'explore'
+sub specialOptions(){
 #   Directory request
     ExploreDirFile();
 #   Back a Directory
-    StepBackDir();
-#   Quit
-    Quit();
+    stepBackDir();
+#   quit program
+    quit();
 }
 
-sub Quit(){
+##############quit
+# exits program -q
+sub quit(){
     if(defined $opts{'q'}){
 	exit(0);
     }
 }
 
-sub StepBackDir(){
+############################################stepBackDir
+#moves back a directory(or the current dir from a file)
+# -r -b
+sub stepBackDir(){
     if(defined $opts{'b'} || defined $opts{'r'}){
 	pop @PathDirRef;
     }
@@ -266,20 +308,21 @@ sub StepBackDir(){
     delete $opts{'r'}
 }
 
-
-#gmkh
-sub ToggleOptions($){
+############################toggleOptions
+#turns these options on and off depending 
+#on their current state -g -m -k -h
+sub toggleOptions($){
     my $char = shift @_;
     if(defined $opts{$char}){
 	delete $opts{$char};
     }else{
 	$opts{$char} = '1';
     }
-#    print Dumper %opts;
 }
 
-
-sub Main(){
+##############################main
+#loop of OPTIONS-DISPLAY-STDIN etc.
+sub main(){
     do{
 	options;
 	if(defined $_){
@@ -287,19 +330,18 @@ sub Main(){
 	}
 	Help;
 	if($#PathDirRef == -1){
-	    $PARENTDIRREF = OpenDir($ARGV[0]);
+	    $PARENTDIRREF = openDir($ARGV[0]);
 	    push (@PathDirRef, $PARENTDIRREF);
 	}	    
 	if (ref $PathDirRef[$#PathDirRef] eq "HASH"){
-	    PrintDir(%{$PathDirRef[$#PathDirRef]});
+	    printDir(%{$PathDirRef[$#PathDirRef]});
 	}elsif (ref $PathDirRef[$#PathDirRef] eq "ARRAY"){
-	    StatInfo($PathDirRef[$#PathDirRef]);
+	    statInfo($PathDirRef[$#PathDirRef]);
 	}
-	Explore();
+	explorePrint();
     }while(<STDIN>)
 }
 
-
-Main;
+main;
 
 exit(0);
