@@ -11,6 +11,7 @@ my %opts;
 my @currentDirRef = ();
 my @PathDirRef = ();
 my @PathDirName = ();
+my @CurDirNames= ();
 my $PARENTDIRREF;
 use constant KILO => 1024;
 use constant MEGA => 1048576;
@@ -31,12 +32,25 @@ sub printDir(@){
     foreach (sort {($sortCurrentDir{$b} <=> $sortCurrentDir{$a})} keys %sortCurrentDir){
 	if($count <= $amount){   
 	    next if($_ eq '.');
-	    printf "%-4s %-30s %-12s %-20s\n", "$count)", substr($_,0,29), 
-	    requestedFileSize($sortCurrentDir{$_}), histogram($_,%sortCurrentDir);
+	    printf "%-4s %-30s %-12s %-20s\n", "$count)", printDirName($_,$originalHash{$_})
+	    ,requestedFileSize($sortCurrentDir{$_}), histogram($_,%sortCurrentDir);
+	    push(@CurDirNames, $_);
 	    push (@currentDirRef, $originalHash{$_});
 	} 
 	$count = $count+1;
     }
+}
+
+################################printDirName
+#deals with long dir/file names and Indicates 
+# a dir by appending /* to its name
+sub printDirName($$){
+    my ($name, $reference) = @_;
+    my $name = substr($name,0,27);
+    if (ref $reference eq "HASH"){
+	$name = $name . "/*";
+    }
+    return $name;
 }
 
 ##################################statInfo
@@ -137,7 +151,7 @@ sub topNumEntries(@){
 	$amount= keys %subHash;
     }
     return $amount;
-OA}
+}
 
 ##############################replaceWithSize
 #Fills the new hash with the appropriate size
@@ -248,15 +262,17 @@ sub explorePrint{
 #this pushes the reference to that dir/file on the path array
 sub ExploreDirFile(){
     if(defined $opts{'explore'}){
-	my $requestIndex = ($opts{'Explore'})-1;
+	my $requestIndex = ($opts{'explore'})-1;
 	if(ref $currentDirRef[$requestIndex] eq "HASH" ||
 	    ref $currentDirRef[$requestIndex] eq "ARRAY"){
 #	    pathDirRef is used to print the "new" current directory
 	    push(@PathDirRef, $currentDirRef[$requestIndex]);  
+	    push(@PathDirName, $CurDirNames[$requestIndex]);
 	}
     }
 #   clear explore to avoid looping
     delete $opts{'explore'};
+    @CurDirNames= ();
     @currentDirRef = ();
 }
 
@@ -302,6 +318,7 @@ sub quit(){
 # -r -b
 sub stepBackDir(){
     if(defined $opts{'b'} || defined $opts{'r'}){
+	pop @PathDirName;
 	pop @PathDirRef;
     }
     delete $opts{'b'};
@@ -332,7 +349,9 @@ sub main(){
 	if($#PathDirRef == -1){
 	    $PARENTDIRREF = openDir($ARGV[0]);
 	    push (@PathDirRef, $PARENTDIRREF);
+	    push (@PathDirName, $ARGV[0]);
 	}	    
+	print join("/", @PathDirName), "\n";
 	if (ref $PathDirRef[$#PathDirRef] eq "HASH"){
 	    printDir(%{$PathDirRef[$#PathDirRef]});
 	}elsif (ref $PathDirRef[$#PathDirRef] eq "ARRAY"){
