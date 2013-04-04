@@ -152,15 +152,16 @@ Options:
 -N num\t Display only the top 'num' entries for each directory.
 -b\t Display previous directory
 -r\t Return to current directory (file viewing)
+  \t -=Toggle Options=-
 -g\t Display sizes in 1073741824-byte (1-Gbyte) blocks.
 -m\t Display sizes in 1048576-byte (1-Mbyte) blocks.
 -k\t Display sizes in 1024-byte (1-Kbyte) blocks.
 -h\t Display sizes as \"human-readable\" numbers, where
 \t all sizes include a suffix to indicate units of
 \t bytes or {kilo,mega,giga}bytes.
--q\t Quit
 
 -v\t Enable verbose/debugging output.
+-q\t Quit
 ";
     if ($#ARGV < 0){
 	exit(0);
@@ -206,7 +207,7 @@ sub replaceWithSize(@){
 #the units. -h (byte, kilo, mega, giga)
 sub humanReadable($){
     my $size = shift @_;
-    if ($size > 0){
+    if ($size > -1){
 #       The smallest unit is used if more then one option is defined
 #	Size options can be toggled but will still have smallest preside. 
 #	If user enters two sizes at least one will be used
@@ -322,9 +323,21 @@ sub StdinOptions($){
     $opts{'q'}='1' if(m/q/);
 #   gmkh - toggle
     foreach my $var (my @myarray = (m/-?([gmkh])/g)){
-	ToggleOptions($var);
+	toggleOptions($var);
     }
     specialOptions();
+}
+
+############################toggleOptions
+#turns these options on and off depending 
+#on their current state -g -m -k -h
+sub toggleOptions($){
+    my $char = shift @_;
+    if(defined $opts{$char}){
+	delete $opts{$char};
+    }else{
+	$opts{$char} = '1';
+    }
 }
 
 ################################specialOptions
@@ -362,17 +375,6 @@ sub stepBackDir(){
     delete $opts{'r'}
 }
 
-############################toggleOptions
-#turns these options on and off depending 
-#on their current state -g -m -k -h
-sub toggleOptions($){
-    my $char = shift @_;
-    if(defined $opts{$char}){
-	delete $opts{$char};
-    }else{
-	$opts{$char} = '1';
-    }
-}
 
 ########################Start Here
 #loop of OPTIONS-DISPLAY-STDIN etc.
@@ -384,11 +386,11 @@ do{
     Help;
 #   If the path is empty  call openDir for the first time 
     if($#PathDirRef == -1){
-	print "Scanning\n";
+	print "Scanning $ARGV[0] for files...\n";
 	$ParentDirRef = openDir($ARGV[0]);
 	push (@PathDirRef, $ParentDirRef);
 	push (@PathDirName, $ARGV[0]);
-	print "\nDone";
+	print "\nDone.\n";
     }	    
 #   Prints the path name
     print join("/", @PathDirName), "\n";
