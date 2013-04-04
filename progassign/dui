@@ -1,21 +1,45 @@
 #!/usr/bin/perl
 
+###################################Dui
+#This script allows the user to enter
+#a directory, as well as options on 
+#viewing that directory. The script
+#allows users to explore the children
+#directories and files within the 
+#parent directory
+#
+#Author: Kari Bronson
+#Professor: Dr Nicholas Boers
+#Due Date: April 5th 2013
+###################################
+
 use warnings;
 use strict;
 use Getopt::Std;
 use Data::Dumper; 
 
+#clears buffer
 $|=1;
+#count totalfiles
 my $totalFiles= 0;
+#hash used for user entered options
 my %opts;
-my @currentDirRef = ();
+#current path references
 my @PathDirRef = ();
+#current path name
 my @PathDirName = ();
+#References of the current Directory displayed
+my @currentDirRef = ();
+#names of the current directory displayed
 my @CurDirNames= ();
-my $PARENTDIRREF;
-use constant KILO => 1024;
-use constant MEGA => 1048576;
-use constant GIGA => 1073741824;
+#holds original hash from dir
+my $ParentDirRef;
+#Used for options -gmk
+use constant {
+    KILO => 1024,
+    MEGA => 1048576,
+    GIGA => 1073741824,
+};
 
 ##############################printDir
 #Sorting the current directory by size
@@ -29,11 +53,16 @@ sub printDir(@){
 #   replace the reference with the size
     %sortCurrentDir = replaceWithSize(%sortCurrentDir);
 #   print according to file/dir size
-    foreach (sort {($sortCurrentDir{$b} <=> $sortCurrentDir{$a})} keys %sortCurrentDir){
+    foreach (sort {($sortCurrentDir{$b} <=> $sortCurrentDir{$a})} 
+	     keys %sortCurrentDir){
 	if($count <= $amount){   
 	    next if($_ eq '.');
-	    printf "%-4s %-30s %-12s %-20s\n", "$count)", printDirName($_,$originalHash{$_})
-	    ,requestedFileSize($sortCurrentDir{$_}), histogram($_,%sortCurrentDir);
+#           http://stackoverflow.com/questions/3328010
+#	    /best-way-to-have-a-formatted-output-with-perl
+	    printf "%-4s %-30s %-12s %-20s\n", "$count)",
+	        printDirName($_,$originalHash{$_}),
+	        requestedFileSize($sortCurrentDir{$_}),
+	        histogram($_,%sortCurrentDir);
 	    push(@CurDirNames, $_);
 	    push (@currentDirRef, $originalHash{$_});
 	} 
@@ -46,8 +75,9 @@ sub printDir(@){
 # a dir by appending /* to its name
 sub printDirName($$){
     my ($name, $reference) = @_;
-    my $name = substr($name,0,27);
+    $name = substr($name,0,27);
     if (ref $reference eq "HASH"){
+#	append a /* to directories
 	$name = $name . "/*";
     }
     return $name;
@@ -57,22 +87,22 @@ sub printDirName($$){
 #prints the information stat would give by 
 #extracting the information from the array ref
 sub statInfo($){
-    my $arr= shift @_;
-    if(ref $arr eq "ARRAY"){
-	print "Device:\t $arr->[0]
-inode:\t $arr->[1]
-mode:\t $arr->[2]
-nlink:\t $arr->[3]
-uid:\t $arr->[4]
-gid:\t $arr->[5]
-rdev:\t $arr->[6]
-size:\t $arr->[7]
-atime:\t $arr->[8]
-mtime:\t $arr->[9]
-ctime:\t $arr->[10]
-blksz:\t $arr->[11]
-blocks:\t $arr->[12]
-"
+    my $fileInfo= shift @_;
+    if(ref $fileInfo eq "ARRAY"){
+	print "Device:\t $fileInfo->[0]
+inode:\t $fileInfo->[1]
+mode:\t $fileInfo->[2]
+nlink:\t $fileInfo->[3]
+uid:\t ", scalar getpwuid $fileInfo->[4], "
+gid:\t ", scalar getgrgid $fileInfo->[5], "
+rdev:\t $fileInfo->[6]
+size:\t $fileInfo->[7]B
+atime:\t ", scalar localtime($fileInfo->[8]), "
+mtime:\t ", scalar localtime($fileInfo->[9]), "
+ctime:\t ", scalar localtime($fileInfo->[10]), "
+blksz:\t $fileInfo->[11]
+blocks:\t $fileInfo->[12]
+";
     }
 }
 
@@ -83,20 +113,23 @@ sub openDir{
     my %directoryData;
     my $sum = 0;
     my ($directory)=$_[0];
-    opendir my $dh, $directory or die "Issues with opening Directory: $!";
+    opendir my $dh, $directory or 
+	die "Issues with opening Directory: $!";
     foreach my $file (readdir($dh)){
-#	Feedback for the user
-	printTotalFiles();
 	if(-d "$directory/$file" && "$file" ne '.' && "$file" ne '..'){
+#	    recurse if there is a directory, returns the hash reference
 	    $directoryData{$file} = openDir("$directory/$file");
 #	    add child directory size to parent directory
 	    $sum = $sum + $directoryData{$file}->{'.'};
+	    $totalFiles++;
 	}elsif(-f "$directory/$file" || -l "$directory/$file"){
 	    my @arr = stat "$directory/$file";
 	    $directoryData{$file} = \@arr;
 	    $sum = dirSum($sum, "$directory/$file");
 	    verbose($file);
 	}
+#	Feedback for the user
+	printTotalFiles();
     }
     $directoryData{'.'} = $sum;
     return \%directoryData;
@@ -168,30 +201,15 @@ sub replaceWithSize(@){
    return %currentDir;
 }
 
-
-###############################requestedFileSize
-#Returns the size option user requested -k -m -g
-#http://perldoc.perl.org/functions/int.html
-sub requestedFileSize($){
-    my $sizeInBytes = shift @_;
-    if ($sizeInBytes > 0){
-	if (defined $opts{k}){
-	    $sizeInBytes= int($sizeInBytes/KILO);
-	} elsif (defined $opts{m}){
-	    $sizeInBytes= int($sizeInBytes/MEGA);
-	} elsif (defined $opts{g}){
-	    $sizeInBytes= int($sizeInBytes/GIGA);
-	}
-    }
-    return humanReadable($sizeInBytes);
-}
-
 ##########################################humanReadable
 #returns the size with a letter appended that describes 
 #the units. -h (byte, kilo, mega, giga)
 sub humanReadable($){
     my $size = shift @_;
     if ($size > 0){
+#       The smallest unit is used if more then one option is defined
+#	Size options can be toggled but will still have smallest preside. 
+#	If user enters two sizes at least one will be used
 	if (defined $opts{k} && defined $opts{h}){
 	    $size = "$size" . "K";
 	} elsif (defined $opts{m} && defined $opts{h}){
@@ -203,6 +221,24 @@ sub humanReadable($){
 	}
     }
     return $size;
+}
+
+###############################requestedFileSize
+#Returns the size option user requested -k -m -g
+#http://perldoc.perl.org/functions/int.html
+sub requestedFileSize($){
+    my $sizeInBytes = shift @_;
+    if ($sizeInBytes > 0){
+#	smallest size presides.
+	if (defined $opts{k}){
+	    $sizeInBytes= int($sizeInBytes/KILO);
+	} elsif (defined $opts{m}){
+	    $sizeInBytes= int($sizeInBytes/MEGA);
+	} elsif (defined $opts{g}){
+	    $sizeInBytes= int($sizeInBytes/GIGA);
+	}
+    }
+    return humanReadable($sizeInBytes);
 }
 
 ########################verbose
@@ -228,9 +264,8 @@ sub histogram($@){
 #user feedback as to how the scanning is going
 #prints every 100 files
 sub printTotalFiles{
-    print "Scanning\n" if($totalFiles == 0);
-    if($totalFiles % 100 == 0 && $totalFiles != 0){
-	print "\r$totalFiles";
+    if(($totalFiles % 100 == 0 && $totalFiles != 0) || $totalFiles < 100){
+	print "\r$totalFiles ";
     }
 }
 
@@ -289,7 +324,6 @@ sub StdinOptions($){
     foreach my $var (my @myarray = (m/-?([gmkh])/g)){
 	ToggleOptions($var);
     }
-#   print Dumper %opts;
     specialOptions();
 }
 
@@ -318,8 +352,11 @@ sub quit(){
 # -r -b
 sub stepBackDir(){
     if(defined $opts{'b'} || defined $opts{'r'}){
-	pop @PathDirName;
-	pop @PathDirRef;
+	if( $#PathDirRef > 0){
+#           So it doesn't re-scan the initial directory
+	    pop @PathDirName;
+	    pop @PathDirRef;
+	}
     }
     delete $opts{'b'};
     delete $opts{'r'}
@@ -337,30 +374,33 @@ sub toggleOptions($){
     }
 }
 
-##############################main
+########################Start Here
 #loop of OPTIONS-DISPLAY-STDIN etc.
-sub main(){
-    do{
-	options;
-	if(defined $_){
-	    StdinOptions($_);
-	}
-	Help;
-	if($#PathDirRef == -1){
-	    $PARENTDIRREF = openDir($ARGV[0]);
-	    push (@PathDirRef, $PARENTDIRREF);
-	    push (@PathDirName, $ARGV[0]);
-	}	    
-	print join("/", @PathDirName), "\n";
-	if (ref $PathDirRef[$#PathDirRef] eq "HASH"){
-	    printDir(%{$PathDirRef[$#PathDirRef]});
-	}elsif (ref $PathDirRef[$#PathDirRef] eq "ARRAY"){
-	    statInfo($PathDirRef[$#PathDirRef]);
-	}
-	explorePrint();
-    }while(<STDIN>)
-}
+do{
+    options;
+    if(defined $_){
+	StdinOptions($_);
+    }
+    Help;
+#   If the path is empty  call openDir for the first time 
+    if($#PathDirRef == -1){
+	print "Scanning\n";
+	$ParentDirRef = openDir($ARGV[0]);
+	push (@PathDirRef, $ParentDirRef);
+	push (@PathDirName, $ARGV[0]);
+	print "\nDone";
+    }	    
+#   Prints the path name
+    print join("/", @PathDirName), "\n";
+#   Prints either the Directory or File
+    if (ref $PathDirRef[$#PathDirRef] eq "HASH"){
+	printDir(%{$PathDirRef[$#PathDirRef]});
+    }elsif (ref $PathDirRef[$#PathDirRef] eq "ARRAY"){
+	statInfo($PathDirRef[$#PathDirRef]);
+    }
+    explorePrint();
+}while(<STDIN>);
 
-main;
-
-exit(0);
+################################
+    
+    exit(0);
